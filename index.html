@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#101010">
+<title>Tops & Bottoms — Report orario</title>
+<style>
+:root{color-scheme:dark;--bg:#101010;--panel:#181818;--text:#eee;--muted:#999;--line:#303030;--green:#25c26e;--blue:#315bd6;--red:#f04452;--purple:#5030a0}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(16px + env(safe-area-inset-bottom,0px))}
+main{max-width:760px;margin:auto}
+h1{font-size:20px;margin:4px 0 6px}
+.sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+select,input,button{width:100%;min-height:40px;border-radius:8px;border:1px solid #444;background:#222;color:var(--text);padding:8px;font:inherit}
+button{cursor:pointer;font-weight:600}
+button:active{opacity:.8}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.status{font-size:12px;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
+.status.error{color:#ffbd66}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.metric{background:#202020;border-radius:9px;padding:10px;min-width:0}
+.metric .k{font-size:11px;color:var(--muted)}
+.metric .v{font-size:18px;font-weight:700;margin-top:5px;overflow-wrap:anywhere}
+.chartwrap{overflow-x:auto}
+svg{display:block;width:100%;height:auto;min-width:320px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:8px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{padding:9px 6px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+.note{font-size:12px;color:var(--muted);line-height:1.55}
+@media(max-width:420px){.metrics{grid-template-columns:1fr 1fr}.controls{grid-template-columns:1fr}.metric .v{font-size:16px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tops & Bottoms — Report orario</h1>
+  <div class="sub">Ricostruzione HTML ispirata allo script Pine di sbtnc. Conta in quale ora si è verificato il massimo e il minimo di ogni sessione conclusa.</div>
+
+  <section class="panel controls">
+    <div>
+      <label for="symbol">Simbolo Yahoo Finance</label>
+      <input id="symbol" value="QQQ" autocomplete="off" spellcheck="false" placeholder="QQQ oppure NQ=F">
+    </div>
+    <div>
+      <label for="tf">Timeframe di raccolta</label>
+      <select id="tf"><option value="60">1 ora</option><option value="30">30 minuti</option><option value="15">15 minuti</option></select>
+    </div>
+    <div>
+      <label for="tz">Fuso orario del report</label>
+      <select id="tz">
+        <option value="America/New_York" selected>New York (mercato USA)</option>
+        <option value="Europe/Rome">Italia (Roma)</option>
+        <option value="UTC">UTC</option>
+      </select>
+    </div>
+    <div>
+      <label for="session">Sessione</label>
+      <select id="session"><option value="regular">Mercato USA 09:30–16:00 NY</option><option value="all">Tutte le ore disponibili</option></select>
+    </div>
+    <div>
+      <label for="filter">Filtro sessione conclusa</label>
+      <select id="filter"><option value="All">Tutte</option><option value="Up">Solo giornate positive</option><option value="Down">Solo giornate negative</option></select>
+    </div>
+    <div>
+      <label for="range">Periodo dati</label>
+      <select id="range"><option value="1mo">1 mese</option><option value="3mo" selected>3 mesi</option><option value="6mo">6 mesi</option><option value="1y">1 anno</option></select>
+    </div>
+    <div class="row" style="grid-column:1/-1">
+      <button id="load">Carica / aggiorna</button>
+      <button id="reset" type="button">Azzera report</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="metrics">
+      <div class="metric"><div class="k">Sessioni valide</div><div class="v" id="sessions">—</div></div>
+      <div class="metric"><div class="k">Ora con più massimi</div><div class="v" id="topHour">—</div></div>
+      <div class="metric"><div class="k">Ora con più minimi</div><div class="v" id="bottomHour">—</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="chartwrap" id="chart"><div class="status">Premi “Carica / aggiorna” per iniziare.</div></div>
+    <div class="legend">
+      <span><i class="dot" style="background:#25c26e"></i>Massimi più frequenti</span>
+      <span><i class="dot" style="background:#315bd6"></i>Massimi meno frequenti</span>
+      <span><i class="dot" style="background:#f04452"></i>Minimi più frequenti</span>
+      <span><i class="dot" style="background:#5030a0"></i>Minimi meno frequenti</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:15px;margin:0 0 8px">Dettaglio per ora</h2>
+    <div id="table" class="status">Nessun dato caricato.</div>
+  </section>
+
+  <section class="panel note">
+    <strong>Nota sui dati:</strong> la versione HTML usa Yahoo Finance tramite il Worker configurato qui sotto. La fedeltà al Pine dipende dai dati storici restituiti, dal timeframe e dalla definizione della sessione. Il Pine originale analizza le barre del grafico e richiede timeframe 15, 30 o 60 minuti; questa pagina ricostruisce le barre a partire dai dati Yahoo e non può garantire risultati identici a TradingView.
+  </section>
+  <div id="status" class="status">Pronto.</div>
+</main>
+
+<script>
+'use strict';
+const PROXY='https://yahooproxy.b864v27974.workers.dev';
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const fmtPct=n=>`${n.toFixed(1).replace('.',',')}%`;
+const fmtNum=n=>n.toLocaleString('it-IT',{maximumFractionDigits:2});
+let lastReport=null, controller=null;
+
+function partsInZone(ms, zone){
+  const parts=new Intl.DateTimeFormat('en-CA',{
+    timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+  }).formatToParts(new Date(ms));
+  const o={}; for(const p of parts) if(p.type!=='literal') o[p.type]=p.value;
+  return {date:`${o.year}-${o.month}-${o.day}`,hour:+o.hour,minute:+o.minute};
+}
+function localTime(ms, zone){
+  return new Intl.DateTimeFormat('it-IT',{timeZone:zone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(ms));
+}
+function dayTime(ms, zone){
+  return new Intl.DateTimeFormat('it-IT',{timeZone:zone,day:'2-digit',month:'2-digit',year:'2-digit'}).format(new Date(ms));
+}
+function parseYahoo(data){
+  const result=data?.chart?.result?.[0]||data?.result?.[0]||data;
+  const q=result?.indicators?.quote?.[0], ts=result?.timestamp;
+  if(!q||!ts) throw new Error(data?.chart?.error?.description||'Formato dati Yahoo non riconosciuto');
+  const out=[];
+  for(let i=0;i<ts.length;i++){
+    if(![ts[i],q.open?.[i],q.high?.[i],q.low?.[i],q.close?.[i]].every(Number.isFinite)) continue;
+    out.push({time:ts[i]*1000,open:q.open[i],high:q.high[i],low:q.low[i],close:q.close[i]});
+  }
+  out.sort((a,b)=>a.time-b.time);
+  return out.filter((b,i)=>!i||b.time!==out[i-1].time);
+}
+async function fetchBars(symbol, range, interval, signal){
+  const path='/v8/finance/chart/'+encodeURIComponent(symbol)+'?interval='+interval+'&range='+range+'&events=history';
+  const urls=[
+    PROXY+path,
+    PROXY+'/?url='+encodeURIComponent('https://query1.finance.yahoo.com'+path),
+    PROXY+'/?symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval)+'&range='+encodeURIComponent(range)
+  ];
+  let lastError;
+  for(const url of urls){
+    const ac=new AbortController();
+    const abort=()=>ac.abort();
+    signal.addEventListener('abort',abort,{once:true});
+    const timeout=setTimeout(()=>ac.abort(),12000);
+    try{
+      const response=await fetch(url,{cache:'no-store',signal:ac.signal});
+      if(!response.ok) throw new Error('HTTP '+response.status);
+      const data=await response.json();
+      const bars=parseYahoo(data);
+      if(bars.length<5) throw new Error('Yahoo ha restituito poche candele');
+      return bars;
+    }catch(e){
+      if(signal.aborted) throw e;
+      lastError=e.name==='AbortError'?new Error('Timeout nella richiesta Yahoo'):e;
+    }finally{
+      clearTimeout(timeout); signal.removeEventListener('abort',abort);
+    }
+  }
+  throw lastError||new Error('Impossibile caricare i dati');
+}
+function aggregateBars(bars, minutes, zone){
+  // Raggruppamento per data e slot temporale nel fuso scelto. Per le sessioni USA,
+  // l'inizio del conteggio regolare è 09:30 New York.
+  const groups=new Map();
+  for(const b of bars){
+    const p=partsInZone(b.time,zone);
+    let minuteOfDay=p.hour*60+p.minute;
+    let offset=minuteOfDay;
+    if($('session').value==='regular'){
+      if(zone!=='America/New_York') continue;
+      if(minuteOfDay<570||minuteOfDay>=960) continue;
+      offset=minuteOfDay-570;
+    }
+    const slot=Math.floor(offset/minutes);
+    const key=p.date+'|'+slot;
+    let g=groups.get(key);
+    if(!g){g={time:b.time,date:p.date,slot,open:b.open,high:b.high,low:b.low,close:b.close,closeTime:b.time};groups.set(key,g);}
+    else {g.high=Math.max(g.high,b.high);g.low=Math.min(g.low,b.low);g.close=b.close;g.closeTime=b.time;}
+  }
+  return [...groups.values()].sort((a,b)=>a.time-b.time);
+}
+function buildReport(bars, minutes, zone, filter, startDate, endDate){
+  const grouped=aggregateBars(bars,minutes,zone);
+  const days=new Map();
+  for(const b of grouped){
+    if(b.date<startDate||b.date>endDate) continue;
+    let d=days.get(b.date);
+    if(!d){d={date:b.date,open:b.open,close:b.close,high:-Infinity,low:Infinity,topTime:null,bottomTime:null,bars:0};days.set(b.date,d);}
+    d.bars++;
+    if(b.high>d.high){d.high=b.high;d.topTime=b.time;}
+    if(b.low<d.low){d.low=b.low;d.bottomTime=b.time;}
+    d.close=b.close;
+  }
+  const valid=[];
+  for(const d of days.values()){
+    if(!d.bars||d.topTime===null||d.bottomTime===null) continue;
+    if(filter==='Up'&&!(d.close>d.open)) continue;
+    if(filter==='Down'&&!(d.close<d.open)) continue;
+    valid.push(d);
+  }
+  const tops=Array(24).fill(0), bottoms=Array(24).fill(0);
+  for(const d of valid){
+    tops[partsInZone(d.topTime,zone).hour]++;
+    bottoms[partsInZone(d.bottomTime,zone).hour]++;
+  }
+  return {valid,tops,bottoms,minutes,zone};
+}
+function colorMix(a,b,t){
+  const pa=a.match(/\w\w/g).map(x=>parseInt(x,16)),pb=b.match(/\w\w/g).map(x=>parseInt(x,16));
+  return '#'+pa.map((v,i)=>Math.round(v+(pb[i]-v)*t).toString(16).padStart(2,'0')).join('');
+}
+function renderChart(r){
+  const W=720,H=330,left=35,right=8,top=20,bottom=45,plotH=250;
+  const maxCount=Math.max(1,...r.tops,...r.bottoms);
+  const maxPct=maxCount/r.valid.length*100;
+  const barW=12,gap=7,groupW=barW*2+gap;
+  const usable=W-left-right,step=usable/24;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Frequenza oraria di massimi e minimi">`;
+  s+=`<rect width="${W}" height="${H}" fill="#181818"/>`;
+  for(let i=0;i<=4;i++){
+    const y=top+plotH-i*plotH/4, pct=maxPct*i/4;
+    s+=`<line x1="${left}" y1="${y}" x2="${W-right}" y2="${y}" stroke="#333"/>`;
+    s+=`<text x="${left-7}" y="${y+4}" text-anchor="end" fill="#aaa" font-size="10">${pct.toFixed(0)}%</text>`;
+  }
+  for(let h=0;h<24;h++){
+    const cx=left+step*(h+.5), topPct=r.tops[h]/r.valid.length*100, botPct=r.bottoms[h]/r.valid.length*100;
+    const th=topPct/maxPct*plotH,bh=botPct/maxPct*plotH;
+    const gt=Math.max(...r.tops)/r.valid.length*100,bt=Math.max(...r.bottoms)/r.valid.length*100;
+    const ct=colorMix('#0c3299','#25c26e',gt?topPct/gt:0.5);
+    const cb=colorMix('#311b92','#f04452',bt?botPct/bt:0.5);
+    s+=`<rect x="${cx-groupW/2}" y="${top+plotH-th}" width="${barW}" height="${Math.max(topPct?1:0,th)}" rx="1" fill="${ct}"><title>Massimo alle ${pad(h)}: ${r.tops[h]} (${fmtPct(topPct)})</title></rect>`;
+    s+=`<rect x="${cx+gap/2}" y="${top+plotH-bh}" width="${barW}" height="${Math.max(botPct?1:0,bh)}" rx="1" fill="${cb}"><title>Minimo alle ${pad(h)}: ${r.bottoms[h]} (${fmtPct(botPct)})</title></rect>`;
+    s+=`<text x="${cx}" y="${top+plotH+17}" text-anchor="middle" fill="#bbb" font-size="10">${pad(h)}</text>`;
+  }
+  s+=`<text x="${W/2}" y="${H-7}" text-anchor="middle" fill="#aaa" font-size="11">Ora nel fuso selezionato</text></svg>`;
+  $('chart').innerHTML=s;
+}
+function renderTable(r){
+  const total=r.valid.length||1;
+  let html='<table><thead><tr><th>Ora</th><th>Massimi</th><th>% giorni</th><th>Minimi</th><th>% giorni</th></tr></thead><tbody>';
+  for(let h=0;h<24;h++){
+    html+=`<tr><td>${pad(h)}:00</td><td>${r.tops[h]}</td><td>${fmtPct(r.tops[h]/total*100)}</td><td>${r.bottoms[h]}</td><td>${fmtPct(r.bottoms[h]/total*100)}</td></tr>`;
+  }
+  html+='</tbody></table>';
+  $('table').innerHTML=html;
+}
+function updateMetrics(r){
+  const topMax=Math.max(...r.tops),botMax=Math.max(...r.bottoms);
+  $('sessions').textContent=String(r.valid.length);
+  $('topHour').textContent=topMax?`${pad(r.tops.indexOf(topMax))}:00 · ${fmtPct(topMax/r.valid.length*100)}`:'—';
+  $('bottomHour').textContent=botMax?`${pad(r.bottoms.indexOf(botMax))}:00 · ${fmtPct(botMax/r.valid.length*100)}`:'—';
+}
+function dateRangeFromBars(bars,zone){
+  if(!bars.length) return {start:'0000-00-00',end:'9999-99-99'};
+  return {start:partsInZone(bars[0].time,zone).date,end:partsInZone(bars[bars.length-1].time,zone).date};
+}
+async function load(){
+  if(controller) controller.abort();
+  controller=new AbortController();
+  const signal=controller.signal;
+  $('load').disabled=true;
+  $('status').className='status';
+  $('status').textContent='Caricamento dati Yahoo Finance…';
+  try{
+    const symbol=$('symbol').value.trim().toUpperCase();
+    if(!symbol) throw new Error('Inserisci un simbolo, per esempio QQQ o NQ=F.');
+    const range=$('range').value, interval=$('tf').value;
+    const bars=await fetchBars(symbol,range,interval,signal);
+    const zone=$('tz').value,dates=dateRangeFromBars(bars,zone);
+    const report=buildReport(bars,Number(interval),zone,$('filter').value,dates.start,dates.end);
+    if(!report.valid.length) throw new Error('Nessuna sessione valida per i filtri scelti.');
+    lastReport=report;renderChart(report);renderTable(report);updateMetrics(report);
+    $('status').textContent=`${symbol} · ${bars.length} barre ricevute · ${report.valid.length} sessioni conteggiate · aggiornato ${new Date().toLocaleTimeString('it-IT',{timeZone:'Europe/Rome'})} (ora italiana).`;
+  }catch(e){
+    if(!signal.aborted){$('status').className='status error';$('status').textContent='Errore: '+(e?.message||e);}
+  }finally{
+    if(controller&&controller.signal===signal) $('load').disabled=false;
+  }
+}
+$('load').addEventListener('click',load);
+$('reset').addEventListener('click',()=>{
+  lastReport=null;$('sessions').textContent='—';$('topHour').textContent='—';$('bottomHour').textContent='—';
+  $('chart').innerHTML='<div class="status">Premi “Carica / aggiorna” per iniziare.</div>';
+  $('table').textContent='Nessun dato caricato.';$('status').textContent='Report azzerato.';
+});
+</script>
+</body>
+</html>
